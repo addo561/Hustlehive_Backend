@@ -1,1 +1,6 @@
 ###Packages
+uvicorn
+requests
+pydantic
+python-dotenv
+fastapi[standard]
