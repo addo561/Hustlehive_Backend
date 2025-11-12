@@ -69,7 +69,7 @@ async def health_check():
 @app.post("/payment/request", response_model=dict, status_code=status.HTTP_202_ACCEPTED)
 async def request_payment(payment_req: PaymentRequest, background_tasks: BackgroundTasks):
     """
-    Initiate a Momo payment request
+     Momo payment request
     """
     try:
         # Generate reference ID if not provided
