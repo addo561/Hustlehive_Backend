@@ -23,8 +23,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
     allow_credentials=True,
-    alow_methods = ['*'],
-    alow_headers = ['*']
+    allow_methods = ['*'],
+    allow_headers = ['*']
 )
 
 #from momo api 
@@ -181,4 +181,7 @@ async def test_config():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+
+
+
