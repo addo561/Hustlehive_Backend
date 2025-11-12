@@ -17,7 +17,7 @@ def get_momo_token() -> str:
     """Get access token from MTN Momo API"""
     url = f"{CONFIG['MOMO_BASE_URL']}/collection/token/"
     
-    # Create the base64 encoded string in format: API_USER_ID:API_KEY
+    #  base64 encoded string in format: API_USER_ID:API_KEY
     credentials = f"{CONFIG['API_USER_ID']}:{CONFIG['API_KEY']}"
     encoded_credentials = base64.b64encode(credentials.encode()).decode()
     
