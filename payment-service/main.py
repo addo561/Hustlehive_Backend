@@ -98,7 +98,8 @@ async def request_payment(payment_req: PaymentRequest, background_tasks: Backgro
             "externalId": payment_req.external_id,
             "payer": {
                 "partyIdType": "MSISDN",
-                "partyId": "46733123453"  # Sandbox test number
+                "partyId": '233454567898' # Sandbox test number
+                #"partyId": payment_req.payer_phone_number # Sandbox test number
             },
             "payerMessage": payment_req.payer_message,
             "payeeNote": payment_req.payee_note
