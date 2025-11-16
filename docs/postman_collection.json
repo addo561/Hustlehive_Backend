@@ -1,0 +1,183 @@
+{
+  "info": {
+    "name": "Hustlehive Backend - Local",
+    "_postman_id": "hustlehive-local-collection",
+    "description": "Collection for Gateway-proxied endpoints (login, verify, items, bids)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth - Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"demo\",\n  \"password\": \"password123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth","login"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Save token to environment variable 'token'",
+              "if (pm.response.code === 200) {",
+              "  const json = pm.response.json();",
+              "  if (json.token) {",
+              "    pm.environment.set('token', json.token);",
+              "    console.log('token saved to environment');",
+              "  }",
+              "}"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth - Verify",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/auth/verify",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth","verify"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Items - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/proxy/items",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "proxy","items"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Items - Get Single",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/proxy/items/1",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "proxy","items","1"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Items - Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Sample Phone\",\n  \"description\": \"Postman-created sample\",\n  \"price\": 150.0,\n  \"quantity\": 1,\n  \"is_auction\": false,\n  \"start_price\": 0,\n  \"start_date\": \"2025-11-08T00:00:00Z\",\n  \"end_date\": \"2025-11-15T00:00:00Z\",\n  \"status\": \"active\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/proxy/items",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "proxy","items"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Bids - Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"item_id\": 1,\n  \"bid_amount\": 550.0\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/proxy/bids",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "proxy","bids"
+          ]
+        }
+      }
+    }
+  ],
+  "event": [],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "token",
+      "value": ""
+    }
+  ]
+}
