@@ -1,10 +1,15 @@
-from fastapi import BackgroundTasks, FastAPI, HTTPException, status,APIRouter
+from fastapi import BackgroundTasks, HTTPException, status,APIRouter
 import requests
 import uuid
 import os
 from dotenv import load_dotenv
 from utils import get_momo_token
 from models import PaymentRequest,PaymentStatusResponse
+
+from sqlalchemy.orm import Session
+from database import get_db
+from models import Transaction
+from fastapi import Depends
 
 router = APIRouter(tags=['Routers'])
 load_dotenv()
@@ -40,21 +45,38 @@ async def health_check():
         )
 
 @router.post("/payment/request", response_model=dict, status_code=status.HTTP_202_ACCEPTED)
-async def request_payment(payment_req: PaymentRequest, background_tasks: BackgroundTasks):
+async def request_payment(payment_req: PaymentRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
-     Momo payment request
+    Momo payment request
     """
     try:
         # Generate reference ID if not provided
         if not payment_req.external_id:
             payment_req.external_id = str(uuid.uuid4())
         
+        # Generate MTN reference ID
+        reference_id = str(uuid.uuid4())
+        
+        # ✅ CREATE TRANSACTION RECORD IN DATABASE FIRST
+        transaction = Transaction(
+            momo_reference_id=reference_id,
+            external_id=payment_req.external_id,
+            amount=float(payment_req.amount),
+            currency=payment_req.currency,
+            payer_phone_number=payment_req.payer_phone_number,
+            payer_message=payment_req.payer_message,
+            payee_note=payment_req.payee_note,
+            status='INITIATED'
+        )
+        db.add(transaction)
+        db.commit()
+        db.refresh(transaction)
+        
         # Get access token
         access_token = get_momo_token()
         
         # Prepare request to Momo API
         url = f"{CONFIG['MOMO_BASE_URL']}/collection/v1_0/requesttopay"
-        reference_id = str(uuid.uuid4())
         
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -64,15 +86,16 @@ async def request_payment(payment_req: PaymentRequest, background_tasks: Backgro
             "Ocp-Apim-Subscription-Key": CONFIG["SUBSCRIPTION_PRIMARY_KEY"],
         }
         
-        # Create payload
+        # Create payload - use dynamic phone number for production, test number for sandbox
+        payer_phone = '233454567898' if CONFIG["TARGET_ENVIRONMENT"] == "sandbox" else payment_req.payer_phone_number
+        
         payload = {
             "amount": payment_req.amount,
             "currency": payment_req.currency,
             "externalId": payment_req.external_id,
             "payer": {
                 "partyIdType": "MSISDN",
-                "partyId": '233454567898' # Sandbox test number
-                #"partyId": payment_req.payer_phone_number # Sandbox test number
+                "partyId": payer_phone
             },
             "payerMessage": payment_req.payer_message,
             "payeeNote": payment_req.payee_note
@@ -82,6 +105,10 @@ async def request_payment(payment_req: PaymentRequest, background_tasks: Backgro
         response = requests.post(url, json=payload, headers=headers)
         
         if response.status_code == 202:
+            # ✅ UPDATE TRANSACTION STATUS TO PENDING
+            transaction.status = 'PENDING'
+            db.commit()
+            
             return {
                 "message": "Payment request initiated successfully",
                 "reference_id": reference_id,
@@ -91,43 +118,78 @@ async def request_payment(payment_req: PaymentRequest, background_tasks: Backgro
                 "currency": payment_req.currency
             }
         else:
+            # ✅ UPDATE TRANSACTION STATUS TO FAILED
+            transaction.status = 'FAILED'
+            db.commit()
+            
             raise HTTPException(
                 status_code=response.status_code,
                 detail=f"MTN Momo API Error: {response.text}"
             )
             
     except requests.exceptions.RequestException as e:
+        # ✅ UPDATE TRANSACTION STATUS TO ERROR ON EXCEPTION
+        if 'transaction' in locals():
+            transaction.status = 'ERROR'
+            db.commit()
+            
         raise HTTPException(
             status_code=500,
             detail=f"Failed to initiate payment: {str(e)}"
         )
+    except Exception as e:
+        # ✅ CATCH ANY OTHER EXCEPTIONS
+        if 'transaction' in locals():
+            transaction.status = 'ERROR'
+            db.commit()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error: {str(e)}"
+        )
 
 @router.get("/payment/status/{reference_id}", response_model=PaymentStatusResponse)
-async def get_payment_status(reference_id: str):
+async def get_payment_status(reference_id: str, db: Session = Depends(get_db)):
     """
     Check the status of a payment request
     """
     try:
-        access_token = get_momo_token()
+        # ✅ FIRST CHECK DATABASE FOR TRANSACTION
+        transaction = db.query(Transaction).filter(
+            Transaction.momo_reference_id == reference_id
+        ).first()
         
-        url = f"{CONFIG['MOMO_BASE_URL']}/collection/v1_0/requesttopay/{reference_id}"
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "X-Target-Environment": CONFIG["TARGET_ENVIRONMENT"],
-            "Ocp-Apim-Subscription-Key": CONFIG["SUBSCRIPTION_PRIMARY_KEY"],
-        }
+        if not transaction:
+            raise HTTPException(status_code=404, detail="Transaction not found")
         
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        
-        payment_data = response.json()
+        # If status is still PENDING, check with MTN API
+        if transaction.status == 'PENDING':
+            access_token = get_momo_token()
+            
+            url = f"{CONFIG['MOMO_BASE_URL']}/collection/v1_0/requesttopay/{reference_id}"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "X-Target-Environment": CONFIG["TARGET_ENVIRONMENT"],
+                "Ocp-Apim-Subscription-Key": CONFIG["SUBSCRIPTION_PRIMARY_KEY"],
+            }
+            
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            
+            payment_data = response.json()
+            new_status = payment_data.get("status", "UNKNOWN")
+            
+            # ✅ UPDATE DATABASE WITH LATEST STATUS
+            transaction.status = new_status
+            if new_status == 'SUCCESSFUL':
+                transaction.financial_transaction_id = payment_data.get("financialTransactionId")
+            db.commit()
         
         return PaymentStatusResponse(
             reference_id=reference_id,
-            status=payment_data.get("status", "UNKNOWN"),
-            amount=payment_data.get("amount"),
-            currency=payment_data.get("currency"),
-            financial_transaction_id=payment_data.get("financialTransactionId")
+            status=transaction.status,
+            amount=str(transaction.amount),
+            currency=transaction.currency,
+            financial_transaction_id=transaction.financial_transaction_id
         )
         
     except requests.exceptions.HTTPError as e:
@@ -138,6 +200,20 @@ async def get_payment_status(reference_id: str):
                 status_code=500, 
                 detail=f"Error fetching payment status: {str(e)}"
             )
+
+@router.get("/transactions")
+async def list_transactions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """✅ NEW ENDPOINT: List all transactions"""
+    transactions = db.query(Transaction).offset(skip).limit(limit).all()
+    return transactions
+
+@router.get("/transactions/{external_id}")
+async def get_transaction_by_external_id(external_id: str, db: Session = Depends(get_db)):
+    """✅ NEW ENDPOINT: Get transaction by external ID"""
+    transaction = db.query(Transaction).filter(Transaction.external_id == external_id).first()
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return transaction
 
 @router.get("/config/test")
 async def test_config():
