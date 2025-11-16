@@ -1,0 +1,9 @@
+###Packages
+uvicorn
+requests
+pydantic
+python-dotenv
+fastapi[standard]
+sqlalchemy
+psycopg2
+alembic
